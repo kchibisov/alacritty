@@ -452,7 +452,7 @@ impl Display {
                     lines.update(cell);
 
                     // Draw the cell.
-                    api.render_cell(cell, glyph_cache);
+                    api.render_cell(&cell, glyph_cache);
                 }
             });
         }

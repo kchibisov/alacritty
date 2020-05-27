@@ -918,6 +918,7 @@ impl<'a, C> RenderApi<'a, C> {
         }
     }
 
+    #[cfg(not(any(target_os = "macos", windows)))]
     pub fn finish(&self) {
         unsafe {
             gl::Finish();

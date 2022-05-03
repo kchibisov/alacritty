@@ -335,17 +335,11 @@ impl Window {
             .with_transparent(true)
             .with_decorations(window_config.decorations != Decorations::None)
             .with_maximized(window_config.maximized())
+            .with_name(&identity.class.instance, &identity.class.general)
             .with_fullscreen(window_config.fullscreen());
 
         #[cfg(feature = "x11")]
         let builder = builder.with_window_icon(icon.ok());
-
-        #[cfg(feature = "wayland")]
-        let builder = builder.with_app_id(identity.class.instance.to_owned());
-
-        #[cfg(feature = "x11")]
-        let builder = builder
-            .with_class(identity.class.instance.to_owned(), identity.class.general.to_owned());
 
         #[cfg(feature = "x11")]
         let builder = match &window_config.gtk_theme_variant {
@@ -453,6 +447,11 @@ impl Window {
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     pub fn wayland_surface(&self) -> Option<&Attached<WlSurface>> {
         self.wayland_surface.as_ref()
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
+    pub fn activation_token(&self) -> Option<String> {
+        self.window().activation_token()
     }
 
     /// Adjust the IME editor position according to the new location of the cursor.

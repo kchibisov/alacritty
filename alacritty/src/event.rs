@@ -400,7 +400,22 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         S: AsRef<OsStr>,
     {
         #[cfg(not(windows))]
-        let result = spawn_daemon(program, args, self.master_fd, self.shell_pid);
+        let result = {
+            // On Wayland setting activation token is required to raise a window.
+            //
+            // This makes clicking link in alacritty make firefox have urgency.
+            if let Some(activation_token) = self.display.window.activation_token() {
+                env::set_var("XDG_ACTIVATION_TOKEN", activation_token);
+            }
+
+            let result = spawn_daemon(program, args, self.master_fd, self.shell_pid);
+
+            // Clear up env after spawning a daemon.
+            env::remove_var("XDG_ACTIVATION_TOKEN");
+
+            result
+        };
+
         #[cfg(windows)]
         let result = spawn_daemon(program, args);
 

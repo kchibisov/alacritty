@@ -44,6 +44,7 @@ use crate::display::cursor::IntoRects;
 use crate::display::damage::RenderDamageIterator;
 use crate::display::hint::{HintMatch, HintState};
 use crate::display::meter::Meter;
+use crate::display::renderer_context::RendererContext;
 use crate::display::window::Window;
 use crate::event::{Mouse, SearchState};
 use crate::message_bar::{MessageBuffer, MessageType};
@@ -53,6 +54,7 @@ use crate::renderer::{self, GlyphCache, Renderer};
 pub mod content;
 pub mod cursor;
 pub mod hint;
+pub mod renderer_context;
 pub mod window;
 
 mod bell;
@@ -422,15 +424,15 @@ impl Display {
         debug!("Estimated window size: {:?}", estimated_size);
         debug!("Estimated cell size: {} x {}", cell_width, cell_height);
 
+        let renderer_context = RendererContext::new(event_loop, config, identity, estimated_size)?;
+
         // Spawn the Alacritty window.
         let window = Window::new(
-            event_loop,
-            config,
-            identity,
-            estimated_size,
+            &identity.title,
+            renderer_context,
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
             wayland_event_queue,
-        )?;
+        );
 
         // Create renderer.
         let mut renderer = Renderer::new()?;

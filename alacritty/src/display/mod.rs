@@ -388,28 +388,13 @@ pub struct RendererUpdate {
 impl Display {
     pub fn new<E>(
         config: &UiConfig,
-        event_loop: &EventLoopWindowTarget<E>,
         identity: &Identity,
+        rasterizer: Rasterizer,
+        renderer_context: RendererContext,
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
         wayland_event_queue: Option<&EventQueue>,
     ) -> Result<Display, Error> {
-        #[cfg(any(not(feature = "x11"), target_os = "macos", windows))]
-        let is_x11 = false;
-        #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-        let is_x11 = event_loop.is_x11();
 
-        // Guess scale_factor based on first monitor. On Wayland the initial frame always renders at
-        // a scale factor of 1.
-        let estimated_scale_factor = if cfg!(any(target_os = "macos", windows)) || is_x11 {
-            event_loop.available_monitors().next().map(|m| m.scale_factor()).unwrap_or(1.)
-        } else {
-            1.
-        };
-
-        // Guess the target window dimensions.
-        debug!("Loading \"{}\" font", &config.font.normal().family);
-        let font = &config.font;
-        let rasterizer = Rasterizer::new(estimated_scale_factor as f32, font.use_thin_strokes)?;
         let mut glyph_cache = GlyphCache::new(rasterizer, font)?;
         let metrics = glyph_cache.font_metrics();
         let (cell_width, cell_height) = compute_cell_size(config, &metrics);

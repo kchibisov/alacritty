@@ -9,6 +9,8 @@ use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(not(any(target_os = "macos", windows)))]
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::mpsc::{self, Sender, Receiver};
+use std::thread::{self, JoinHandle};
 
 use crossfont::Size;
 use glutin::event::{Event as GlutinEvent, ModifiersState, WindowEvent};
@@ -36,6 +38,70 @@ use crate::event::{ActionContext, Event, EventProxy, EventType, Mouse, SearchSta
 use crate::input;
 use crate::message_bar::MessageBuffer;
 use crate::scheduler::Scheduler;
+
+/// Handle to access window from different threads.
+struct WindowHandle {
+    window_thread: JoinHandle<()>,
+    event_sender: Sender<GlutinEvent<'static, Event>>,
+}
+
+impl WindowHandle {
+    pub fn new(
+        config: &UiConfig,
+        options: &WindowOptions,
+        window_event_loop: &EventLoopWindowTarget<Event>,
+        proxy: EventLoopProxy<Event>,
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        wayland_event_queue: Option<&EventQueue>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let mut pty_config = config.terminal_config.pty_config.clone();
+        options.terminal_options.override_pty_config(&mut pty_config);
+
+        let mut identity = config.window.identity.clone();
+        let preserve_title = options.window_identity.title.is_some();
+        options.window_identity.override_identity_config(&mut identity);
+
+        // Guess scale_factor based on first monitor. On Wayland the initial frame always renders at
+        // a scale factor of 1.
+        let estimated_scale_factor = if cfg!(any(target_os = "macos", windows)) || is_x11 {
+            event_loop.available_monitors().next().map(|m| m.scale_factor()).unwrap_or(1.)
+        } else {
+            1.
+        };
+
+        // Guess the target window dimensions.
+        debug!("Loading \"{}\" font", &config.font.normal().family);
+        let font = &config.font;
+        let rasterizer = Rasterizer::new(estimated_scale_factor as f32, font.use_thin_strokes)?;
+
+        // Create a display.
+        //
+        // The display manages a window and can draw the terminal.
+        let display = Display::new(
+            config,
+            window_event_loop,
+            &identity,
+            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+            wayland_event_queue,
+        )?;
+
+        let (event_sender, event_receiver) = mpsc::channel();
+
+        let window_thread = thread::spawn(move ||  {
+            // TODO
+        });
+
+        Ok(Self { window_thread, event_sender })
+    }
+}
+
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        // TODO send close.
+        self._window_thread.join();
+    }
+}
+
 
 /// Event context for one individual Alacritty window.
 pub struct WindowContext {

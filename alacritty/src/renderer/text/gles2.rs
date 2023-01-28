@@ -67,6 +67,7 @@ impl Gles2Renderer {
 
         unsafe {
             gl::Enable(gl::BLEND);
+            gl::Enable(gl::FRAMEBUFFER_SRGB);
 
             gl::DepthMask(gl::FALSE);
 

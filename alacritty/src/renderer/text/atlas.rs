@@ -75,7 +75,7 @@ impl Atlas {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA as i32,
+                gl::SRGB_ALPHA as i32,
                 size,
                 size,
                 0,

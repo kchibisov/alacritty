@@ -36,6 +36,16 @@ layout(location = 0, index = 1) out vec4 alphaMask;
 uniform int_t renderingPass;
 uniform sampler2D mask;
 
+vec4 toLinear(vec4 sRGB)
+{
+    bvec3 cutoff = lessThan(sRGB.rgb, vec3(0.04045));
+    vec3 higher = pow((sRGB.rgb + vec3(0.055))/vec3(1.055), vec3(2.4));
+    vec3 lower = sRGB.rgb/vec3(12.92);
+
+    return vec4(mix(higher, lower, cutoff), sRGB.a);
+}
+
+
 void main() {
     if (renderingPass == 0) {
         if (bg.a == 0.0) {
@@ -44,7 +54,7 @@ void main() {
 
         ALPHA_MASK = vec4(1.0);
         // Premultiply background color by alpha.
-        FRAG_COLOR = vec4(bg.rgb * bg.a, bg.a);
+        FRAG_COLOR = toLinear(bg);
         return;
     }
 
@@ -68,6 +78,6 @@ void main() {
         // Regular text glyphs.
         vec3_t textColor = texture(mask, TexCoords).rgb;
         ALPHA_MASK = vec4(textColor, textColor.r);
-        FRAG_COLOR = vec4(fg.rgb, 1.0);
+        FRAG_COLOR = toLinear(vec4(fg.rgb, 1.0));
     }
 }

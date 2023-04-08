@@ -335,14 +335,10 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-            let mut tokens = 0..;
-
             let poll_opts = polling::PollMode::EdgeOneshot;
 
             // Register TTY through EventedRW interface.
-            self.pty
-                .register(&self.poll, &mut tokens, polling::Event::readable(0), poll_opts)
-                .unwrap();
+            self.pty.register(&self.poll, polling::Event::readable(0), poll_opts).unwrap();
 
             let mut events = Vec::with_capacity(1024);
 
@@ -379,7 +375,7 @@ where
 
                 for event in events.iter() {
                     match event.key {
-                        token if token == self.pty.child_event_token() => {
+                        tty::PTY_CHILD_EVENT_TOKEN => {
                             if let Some(tty::ChildEvent::Exited) = self.pty.next_child_event() {
                                 if self.hold {
                                     // With hold enabled, make sure the PTY is drained.
@@ -394,10 +390,7 @@ where
                             }
                         },
 
-                        token
-                            if token == self.pty.read_token()
-                                || token == self.pty.write_token() =>
-                        {
+                        token if token == tty::PTY_READ_TOKEN || token == tty::PTY_WRITE_TOKEN => {
                             /*
                             #[cfg(unix)]
                             if UnixReady::from(event.readiness()).is_hup() {

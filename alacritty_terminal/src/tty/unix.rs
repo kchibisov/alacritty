@@ -21,6 +21,13 @@ use crate::config::PtyConfig;
 use crate::event::{OnResize, WindowSize};
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
 
+// We use the same interest for reading and writing.
+pub(crate) const PTY_READ_TOKEN: usize = 0;
+pub(crate) const PTY_WRITE_TOKEN: usize = 0;
+
+// Interest in new child events.
+pub(crate) const PTY_CHILD_EVENT_TOKEN: usize = 1;
+
 macro_rules! die {
     ($($arg:tt)*) => {{
         error!($($arg)*);
@@ -309,15 +316,14 @@ impl EventedReadWrite for Pty {
     fn register(
         &mut self,
         poll: &polling::Poller,
-        token: &mut dyn Iterator<Item = usize>,
         mut interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> Result<()> {
-        self.token = token.next().unwrap();
+        self.token = PTY_READ_TOKEN;
         interest.key = self.token;
         poll.add_with_mode(&self.file, interest, poll_opts)?;
 
-        self.signals_token = token.next().unwrap();
+        self.signals_token = PTY_CHILD_EVENT_TOKEN;
         poll.add_with_mode(
             &self.signals,
             polling::Event::readable(self.signals_token),
@@ -354,18 +360,8 @@ impl EventedReadWrite for Pty {
     }
 
     #[inline]
-    fn read_token(&self) -> usize {
-        self.token
-    }
-
-    #[inline]
     fn writer(&mut self) -> &mut File {
         &mut self.file
-    }
-
-    #[inline]
-    fn write_token(&self) -> usize {
-        self.token
     }
 }
 
@@ -400,11 +396,6 @@ impl EventedPty for Pty {
             Ok(None) => None,
             Ok(_) => Some(ChildEvent::Exited),
         }
-    }
-
-    #[inline]
-    fn child_event_token(&self) -> usize {
-        self.signals_token
     }
 }
 

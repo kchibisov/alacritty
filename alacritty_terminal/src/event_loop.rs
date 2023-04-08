@@ -36,6 +36,33 @@ pub enum Msg {
     Resize(WindowSize),
 }
 
+struct PeekableReceiver<T> {
+    rx: Receiver<T>,
+    peeked: Option<T>,
+}
+
+impl<T> PeekableReceiver<T> {
+    fn new(rx: Receiver<T>) -> Self {
+        Self { rx, peeked: None }
+    }
+
+    fn peek(&mut self) -> Option<&T> {
+        if self.peeked.is_none() {
+            self.peeked = self.rx.try_recv().ok();
+        }
+
+        self.peeked.as_ref()
+    }
+
+    fn recv(&mut self) -> Option<T> {
+        if self.peeked.is_some() {
+            self.peeked.take()
+        } else {
+            self.rx.try_recv().ok()
+        }
+    }
+}
+
 /// The main event!.. loop.
 ///
 /// Handles all the PTY I/O and runs the PTY parser which updates terminal
@@ -43,7 +70,7 @@ pub enum Msg {
 pub struct EventLoop<T: tty::EventedPty, U: EventListener> {
     poll: Arc<polling::Poller>,
     pty: T,
-    rx: Receiver<Msg>,
+    rx: PeekableReceiver<Msg>,
     tx: Sender<Msg>,
     terminal: Arc<FairMutex<Term<U>>>,
     event_proxy: U,
@@ -172,7 +199,7 @@ where
             poll: polling::Poller::new().expect("create mio Poll").into(),
             pty,
             tx,
-            rx,
+            rx: PeekableReceiver::new(rx),
             terminal,
             event_proxy,
             hold,
@@ -188,7 +215,7 @@ where
     ///
     /// Returns `false` when a shutdown message was received.
     fn drain_recv_channel(&mut self, state: &mut State) -> bool {
-        while let Ok(msg) = self.rx.try_recv() {
+        while let Some(msg) = self.rx.recv() {
             match msg {
                 Msg::Input(input) => state.write_list.push_back(input),
                 Msg::Resize(window_size) => self.pty.on_resize(window_size),
@@ -339,7 +366,7 @@ where
                 }
 
                 // Handle synchronized update timeout.
-                if events.is_empty() {
+                if events.is_empty() && self.rx.peek().is_none() {
                     state.parser.stop_sync(&mut *self.terminal.lock());
                     self.event_proxy.send_event(Event::Wakeup);
                     continue;

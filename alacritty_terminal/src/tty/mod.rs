@@ -24,18 +24,23 @@ pub trait EventedReadWrite {
 
     fn register(
         &mut self,
-        _: &mio::Poll,
-        _: &mut dyn Iterator<Item = mio::Token>,
-        _: mio::Ready,
-        _: mio::PollOpt,
+        _: &polling::Poller,
+        _: &mut dyn Iterator<Item = usize>,
+        _: polling::Event,
+        _: polling::PollMode,
     ) -> io::Result<()>;
-    fn reregister(&mut self, _: &mio::Poll, _: mio::Ready, _: mio::PollOpt) -> io::Result<()>;
-    fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
+    fn reregister(
+        &mut self,
+        _: &polling::Poller,
+        _: polling::Event,
+        _: polling::PollMode,
+    ) -> io::Result<()>;
+    fn deregister(&mut self, _: &polling::Poller) -> io::Result<()>;
 
     fn reader(&mut self) -> &mut Self::Reader;
-    fn read_token(&self) -> mio::Token;
+    fn read_token(&self) -> usize;
     fn writer(&mut self) -> &mut Self::Writer;
-    fn write_token(&self) -> mio::Token;
+    fn write_token(&self) -> usize;
 }
 
 /// Events concerning TTY child processes.
@@ -51,7 +56,7 @@ pub enum ChildEvent {
 /// notified if the PTY child process does something we care about (other than writing to the TTY).
 /// In particular, this allows for race-free child exit notification on UNIX (cf. `SIGCHLD`).
 pub trait EventedPty: EventedReadWrite {
-    fn child_event_token(&self) -> mio::Token;
+    fn child_event_token(&self) -> usize;
 
     /// Tries to retrieve an event.
     ///

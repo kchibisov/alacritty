@@ -249,7 +249,8 @@ pub struct RectRenderer {
     vao: GLuint,
     vbo: GLuint,
 
-    programs: [RectShaderProgram; 4],
+    program: RectShaderProgram,
+
     vertices: [Vec<Vertex>; 4],
 }
 
@@ -257,11 +258,7 @@ impl RectRenderer {
     pub fn new(shader_version: ShaderVersion) -> Result<Self, renderer::Error> {
         let mut vao: GLuint = 0;
         let mut vbo: GLuint = 0;
-
-        let rect_program = RectShaderProgram::new(shader_version, RectKind::Normal)?;
-        let undercurl_program = RectShaderProgram::new(shader_version, RectKind::Undercurl)?;
-        let dotted_program = RectShaderProgram::new(shader_version, RectKind::DottedUnderline)?;
-        let dashed_program = RectShaderProgram::new(shader_version, RectKind::DashedUnderline)?;
+        let program = RectShaderProgram::new(shader_version)?;
 
         unsafe {
             // Allocate buffers.
@@ -303,8 +300,7 @@ impl RectRenderer {
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
         }
 
-        let programs = [rect_program, undercurl_program, dotted_program, dashed_program];
-        Ok(Self { vao, vbo, programs, vertices: Default::default() })
+        Ok(Self { vao, vbo, program, vertices: Default::default() })
     }
 
     pub fn draw(&mut self, size_info: &SizeInfo, metrics: &Metrics, rects: Vec<RenderRect>) {
@@ -314,6 +310,9 @@ impl RectRenderer {
 
             // Bind VBO only once for buffer data upload only.
             gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+
+            gl::UseProgram(self.program.id());
+            self.program.update_uniforms(size_info, metrics);
         }
 
         let half_width = size_info.width() / 2.;
@@ -334,9 +333,7 @@ impl RectRenderer {
                     continue;
                 }
 
-                let program = &self.programs[rect_kind as usize];
-                gl::UseProgram(program.id());
-                program.update_uniforms(size_info, metrics);
+                self.program.set_rect_kind(rect_kind);
 
                 // Upload accumulated undercurl vertices.
                 gl::BufferData(
@@ -402,53 +399,56 @@ pub struct RectShaderProgram {
     /// Shader program.
     program: ShaderProgram,
 
+    /// Kind of rect we're drawing.
+    u_rect_kind: GLint,
+
     /// Cell width.
-    u_cell_width: Option<GLint>,
+    u_cell_width: GLint,
 
     /// Cell height.
-    u_cell_height: Option<GLint>,
+    u_cell_height: GLint,
 
     /// Terminal padding.
-    u_padding_x: Option<GLint>,
+    u_padding_x: GLint,
 
     /// A padding from the bottom of the screen to viewport.
-    u_padding_y: Option<GLint>,
+    u_padding_y: GLint,
 
     /// Underline position.
-    u_underline_position: Option<GLint>,
+    u_underline_position: GLint,
 
     /// Underline thickness.
-    u_underline_thickness: Option<GLint>,
+    u_underline_thickness: GLint,
 
     /// Undercurl position.
-    u_undercurl_position: Option<GLint>,
+    u_undercurl_position: GLint,
 }
 
 impl RectShaderProgram {
-    pub fn new(shader_version: ShaderVersion, kind: RectKind) -> Result<Self, ShaderError> {
-        // XXX: This must be in-sync with fragment shader defines.
-        let header = match kind {
-            RectKind::Undercurl => Some("#define DRAW_UNDERCURL\n"),
-            RectKind::DottedUnderline => Some("#define DRAW_DOTTED\n"),
-            RectKind::DashedUnderline => Some("#define DRAW_DASHED\n"),
-            _ => None,
-        };
-        let program = ShaderProgram::new(shader_version, header, RECT_SHADER_V, RECT_SHADER_F)?;
+    pub fn new(shader_version: ShaderVersion) -> Result<Self, ShaderError> {
+        let program = ShaderProgram::new(shader_version, RECT_SHADER_V, RECT_SHADER_F)?;
 
         Ok(Self {
-            u_cell_width: program.get_uniform_location(cstr!("cellWidth")).ok(),
-            u_cell_height: program.get_uniform_location(cstr!("cellHeight")).ok(),
-            u_padding_x: program.get_uniform_location(cstr!("paddingX")).ok(),
-            u_padding_y: program.get_uniform_location(cstr!("paddingY")).ok(),
-            u_underline_position: program.get_uniform_location(cstr!("underlinePosition")).ok(),
-            u_underline_thickness: program.get_uniform_location(cstr!("underlineThickness")).ok(),
-            u_undercurl_position: program.get_uniform_location(cstr!("undercurlPosition")).ok(),
+            u_rect_kind: program.get_uniform_location(cstr!("rectKind"))?,
+            u_cell_width: program.get_uniform_location(cstr!("cellWidth"))?,
+            u_cell_height: program.get_uniform_location(cstr!("cellHeight"))?,
+            u_padding_x: program.get_uniform_location(cstr!("paddingX"))?,
+            u_padding_y: program.get_uniform_location(cstr!("paddingY"))?,
+            u_underline_position: program.get_uniform_location(cstr!("underlinePosition"))?,
+            u_underline_thickness: program.get_uniform_location(cstr!("underlineThickness"))?,
+            u_undercurl_position: program.get_uniform_location(cstr!("undercurlPosition"))?,
             program,
         })
     }
 
     fn id(&self) -> GLuint {
         self.program.id()
+    }
+
+    fn set_rect_kind(&self, ty: u8) {
+        unsafe {
+            gl::Uniform1i(self.u_rect_kind, ty as i32);
+        }
     }
 
     pub fn update_uniforms(&self, size_info: &SizeInfo, metrics: &Metrics) {
@@ -460,27 +460,13 @@ impl RectShaderProgram {
             - (viewport_height / size_info.cell_height()).floor() * size_info.cell_height();
 
         unsafe {
-            if let Some(u_cell_width) = self.u_cell_width {
-                gl::Uniform1f(u_cell_width, size_info.cell_width());
-            }
-            if let Some(u_cell_height) = self.u_cell_height {
-                gl::Uniform1f(u_cell_height, size_info.cell_height());
-            }
-            if let Some(u_padding_y) = self.u_padding_y {
-                gl::Uniform1f(u_padding_y, padding_y);
-            }
-            if let Some(u_padding_x) = self.u_padding_x {
-                gl::Uniform1f(u_padding_x, size_info.padding_x());
-            }
-            if let Some(u_underline_position) = self.u_underline_position {
-                gl::Uniform1f(u_underline_position, underline_position);
-            }
-            if let Some(u_underline_thickness) = self.u_underline_thickness {
-                gl::Uniform1f(u_underline_thickness, metrics.underline_thickness);
-            }
-            if let Some(u_undercurl_position) = self.u_undercurl_position {
-                gl::Uniform1f(u_undercurl_position, position);
-            }
+            gl::Uniform1f(self.u_cell_width, size_info.cell_width());
+            gl::Uniform1f(self.u_cell_height, size_info.cell_height());
+            gl::Uniform1f(self.u_padding_y, padding_y);
+            gl::Uniform1f(self.u_padding_x, size_info.padding_x());
+            gl::Uniform1f(self.u_underline_position, underline_position);
+            gl::Uniform1f(self.u_underline_thickness, metrics.underline_thickness);
+            gl::Uniform1f(self.u_undercurl_position, position);
         }
     }
 }

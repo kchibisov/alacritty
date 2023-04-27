@@ -102,6 +102,9 @@ impl<R: Read + Send + 'static> UnblockedReader<R> {
     pub fn register(&self, poller: &Arc<Poller>, event: Event) {
         let mut interest = self.interest.lock().unwrap();
         *interest = Some(Interest { event, poller: poller.clone() });
+
+        // Send the event to start off with.
+        poller.post(CompletionPacket::new(event)).ok();
     }
 
     /// Deregister interest in the reader.
@@ -205,6 +208,9 @@ impl<W: Write + Send + 'static> UnblockedWriter<W> {
     pub fn register(&self, poller: &Arc<Poller>, event: Event) {
         let mut interest = self.interest.lock().unwrap();
         *interest = Some(Interest { event, poller: poller.clone() });
+
+        // Send the event to start off with.
+        poller.post(CompletionPacket::new(event)).ok();
     }
 
     /// Deregister interest in the writer.

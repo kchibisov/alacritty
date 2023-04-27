@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::io::{self, Error, ErrorKind, Result};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
+use std::sync::Arc;
 use std::sync::mpsc::TryRecvError;
 
 use crate::config::{Program, PtyConfig};
@@ -9,11 +10,21 @@ use crate::event::{OnResize, WindowSize};
 use crate::tty::windows::child::ChildExitWatcher;
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
 
+mod blocking;
 mod child;
 mod conpty;
 
+use blocking::{UnblockedReader, UnblockedWriter};
 use conpty::Conpty as Backend;
-use mio_anonymous_pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
+use miow::pipe::{AnonRead, AnonWrite};
+use polling::Poller;
+
+pub const PTY_CHILD_EVENT_TOKEN: usize = 1;
+pub const PTY_READ_TOKEN: usize = 2;
+pub const PTY_WRITE_TOKEN: usize = 3;
+
+type ReadPipe = UnblockedReader<AnonRead>;
+type WritePipe = UnblockedWriter<AnonWrite>;
 
 pub struct Pty {
     // XXX: Backend is required to be the first field, to ensure correct drop order. Dropping
@@ -21,9 +32,6 @@ pub struct Pty {
     backend: Backend,
     conout: ReadPipe,
     conin: WritePipe,
-    read_token: mio::Token,
-    write_token: mio::Token,
-    child_event_token: mio::Token,
     child_watcher: ChildExitWatcher,
 }
 
@@ -43,9 +51,6 @@ impl Pty {
             backend: backend.into(),
             conout: conout.into(),
             conin: conin.into(),
-            read_token: 0.into(),
-            write_token: 0.into(),
-            child_event_token: 0.into(),
             child_watcher,
         }
     }
@@ -58,14 +63,13 @@ impl EventedReadWrite for Pty {
     #[inline]
     fn register(
         &mut self,
-        poll: &mio::Poll,
-        token: &mut dyn Iterator<Item = mio::Token>,
-        interest: mio::Ready,
-        poll_opts: mio::PollOpt,
+        poll: &Arc<Poller>,
+        interest: polling::Event,
+        poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.read_token = token.next().unwrap();
-        self.write_token = token.next().unwrap();
+        if interest.readable {
 
+        }
         if interest.is_readable() {
             poll.register(&self.conout, self.read_token, mio::Ready::readable(), poll_opts)?
         } else {

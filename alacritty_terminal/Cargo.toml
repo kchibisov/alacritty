@@ -24,7 +24,7 @@ parking_lot = "0.12.0"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_yaml = "0.8"
 vte = { version = "0.10.0", default-features = false }
-polling = "2.7.0"
+polling = "2.8.0"
 log = "0.4"
 unicode-width = "0.1"
 base64 = "0.13.0"
@@ -37,7 +37,7 @@ signal-hook = "0.3.10"
 
 [target.'cfg(windows)'.dependencies]
 miow = "0.3"
-mio-anonymous-pipes = "0.2"
+piper = "0.2.0"
 windows-sys = { version = "0.36", features = [
     "Win32_System_Console",
     "Win32_Foundation",

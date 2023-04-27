@@ -1,6 +1,7 @@
 //! TTY related functionality.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{env, io};
 
 use crate::config::Config;
@@ -24,17 +25,17 @@ pub trait EventedReadWrite {
 
     fn register(
         &mut self,
-        _: &polling::Poller,
+        _: &Arc<polling::Poller>,
         _: polling::Event,
         _: polling::PollMode,
     ) -> io::Result<()>;
     fn reregister(
         &mut self,
-        _: &polling::Poller,
+        _: &Arc<polling::Poller>,
         _: polling::Event,
         _: polling::PollMode,
     ) -> io::Result<()>;
-    fn deregister(&mut self, _: &polling::Poller) -> io::Result<()>;
+    fn deregister(&mut self, _: &Arc<polling::Poller>) -> io::Result<()>;
 
     fn reader(&mut self) -> &mut Self::Reader;
     fn writer(&mut self) -> &mut Self::Writer;

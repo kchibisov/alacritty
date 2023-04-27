@@ -1,10 +1,10 @@
 use std::ffi::c_void;
 use std::io::Error;
-use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
-use polling::{Poller, Event};
 use polling::os::iocp::{CompletionPacket, PollerIocpExt};
+use polling::{Event, Poller};
 
 use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::System::Threading::{
@@ -13,12 +13,15 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::System::WindowsProgramming::INFINITE;
 
 use crate::tty::ChildEvent;
-use super::PTY_CHILD_EVENT_TOKEN;
+
+struct Interest {
+    poller: Arc<Poller>,
+    event: Event,
+}
 
 struct ChildExitSender {
     sender: mpsc::Sender<ChildEvent>,
-    poller: Arc<Poller>,
-    packet: CompletionPacket,
+    interest: Arc<Mutex<Option<Interest>>>,
 }
 
 /// WinAPI callback to run when child process exits.
@@ -29,24 +32,25 @@ extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
 
     let event_tx: Box<_> = unsafe { Box::from_raw(ctx as *mut ChildExitSender) };
     let _ = event_tx.sender.send(ChildEvent::Exited);
-    let _ = event_tx.poller.post(event_tx.packet);
+    let interest = event_tx.interest.lock().unwrap();
+    if let Some(interest) = interest.as_ref() {
+        interest.poller.post(CompletionPacket::new(interest.event)).ok();
+    }
 }
 
 pub struct ChildExitWatcher {
     wait_handle: AtomicPtr<c_void>,
     event_rx: mpsc::Receiver<ChildEvent>,
+    interest: Arc<Mutex<Option<Interest>>>,
 }
 
 impl ChildExitWatcher {
-    pub fn new(poller: &Arc<Poller>, child_handle: HANDLE) -> Result<ChildExitWatcher, Error> {
+    pub fn new(child_handle: HANDLE) -> Result<ChildExitWatcher, Error> {
         let (event_tx, event_rx) = mpsc::channel();
 
         let mut wait_handle: HANDLE = 0;
-        let sender_ref = Box::new(ChildExitSender {
-            sender: event_tx,
-            poller: poller.clone(),
-            packet: CompletionPacket::new(Event::readable(PTY_CHILD_EVENT_TOKEN)),
-        });
+        let interest = Arc::new(Mutex::new(None));
+        let sender_ref = Box::new(ChildExitSender { sender: event_tx, interest: interest.clone() });
 
         let success = unsafe {
             RegisterWaitForSingleObject(
@@ -65,12 +69,21 @@ impl ChildExitWatcher {
             Ok(ChildExitWatcher {
                 wait_handle: AtomicPtr::from(wait_handle as *mut c_void),
                 event_rx,
+                interest,
             })
         }
     }
 
     pub fn event_rx(&self) -> &mpsc::Receiver<ChildEvent> {
         &self.event_rx
+    }
+
+    pub fn register(&self, poller: &Arc<Poller>, event: Event) {
+        *self.interest.lock().unwrap() = Some(Interest { poller: poller.clone(), event });
+    }
+
+    pub fn deregister(&self) {
+        *self.interest.lock().unwrap() = None;
     }
 }
 
@@ -89,6 +102,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use super::super::PTY_CHILD_EVENT_TOKEN;
     use super::*;
 
     #[test]
@@ -98,14 +112,15 @@ mod tests {
         let poller = Arc::new(Poller::new().unwrap());
 
         let mut child = Command::new("cmd.exe").spawn().unwrap();
-        let child_exit_watcher = ChildExitWatcher::new(&poller, child.as_raw_handle() as HANDLE).unwrap();
+        let child_exit_watcher = ChildExitWatcher::new(child.as_raw_handle() as HANDLE).unwrap();
+        child_exit_watcher.register(&poller, Event::readable(PTY_CHILD_EVENT_TOKEN));
 
         child.kill().unwrap();
 
         // Poll for the event or fail with timeout if nothing has been sent.
         let mut events = vec![];
         poller.wait(&mut events, Some(WAIT_TIMEOUT)).unwrap();
-        assert_eq!(events.iter().next().unwrap().key, PTY_CHILD_EVENT_TOKEN);
+        assert_eq!(events[0].key, PTY_CHILD_EVENT_TOKEN);
         // Verify that at least one `ChildEvent::Exited` was received.
         assert_eq!(child_exit_watcher.event_rx().try_recv(), Ok(ChildEvent::Exited));
     }

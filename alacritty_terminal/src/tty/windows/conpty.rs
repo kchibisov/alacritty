@@ -2,8 +2,6 @@ use std::io::Error;
 use std::os::windows::io::IntoRawHandle;
 use std::{mem, ptr};
 
-use mio_anonymous_pipes::{EventedAnonRead, EventedAnonWrite};
-
 use windows_sys::core::PWSTR;
 use windows_sys::Win32::Foundation::{HANDLE, S_OK};
 use windows_sys::Win32::System::Console::{
@@ -17,8 +15,12 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::config::PtyConfig;
 use crate::event::{OnResize, WindowSize};
+use crate::tty::windows::blocking::{UnblockedReader, UnblockedWriter};
 use crate::tty::windows::child::ChildExitWatcher;
 use crate::tty::windows::{cmdline, win32_string, Pty};
+
+// Adjust to taste. Too high means higher memory consumption, too low means over-synchronization.
+const PIPE_CAPACITY: usize = 4 * 1024 * 1024;
 
 /// RAII Pseudoconsole.
 pub struct Conpty {
@@ -154,8 +156,8 @@ pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
         }
     }
 
-    let conin = EventedAnonWrite::new(conin);
-    let conout = EventedAnonRead::new(conout);
+    let conin = UnblockedWriter::new(conin, PIPE_CAPACITY);
+    let conout = UnblockedReader::new(conout, PIPE_CAPACITY);
 
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess).unwrap();
     let conpty = Conpty { handle: pty_handle as HPCON };

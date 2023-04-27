@@ -8,6 +8,7 @@ use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::{env, ptr};
 
 use libc::{self, c_int, winsize, TIOCSCTTY};
@@ -315,7 +316,7 @@ impl EventedReadWrite for Pty {
     #[inline]
     fn register(
         &mut self,
-        poll: &polling::Poller,
+        poll: &Arc<polling::Poller>,
         mut interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> Result<()> {
@@ -334,7 +335,7 @@ impl EventedReadWrite for Pty {
     #[inline]
     fn reregister(
         &mut self,
-        poll: &polling::Poller,
+        poll: &Arc<polling::Poller>,
         mut interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> Result<()> {
@@ -349,7 +350,7 @@ impl EventedReadWrite for Pty {
     }
 
     #[inline]
-    fn deregister(&mut self, poll: &polling::Poller) -> Result<()> {
+    fn deregister(&mut self, poll: &Arc<polling::Poller>) -> Result<()> {
         poll.delete(&self.file)?;
         poll.delete(&self.signals)
     }

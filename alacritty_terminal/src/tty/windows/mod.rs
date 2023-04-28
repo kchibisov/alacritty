@@ -64,10 +64,10 @@ impl EventedReadWrite for Pty {
         &mut self,
         poll: &Arc<Poller>,
         interest: polling::Event,
-        _poll_opts: polling::PollMode,
+        poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.conin.register(poll, with_key(interest, PTY_WRITE_TOKEN));
-        self.conout.register(poll, with_key(interest, PTY_READ_TOKEN));
+        self.conin.register(poll, with_key(interest, PTY_WRITE_TOKEN), poll_opts);
+        self.conout.register(poll, with_key(interest, PTY_READ_TOKEN), poll_opts);
         self.child_watcher.register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
@@ -78,10 +78,10 @@ impl EventedReadWrite for Pty {
         &mut self,
         poll: &Arc<Poller>,
         interest: polling::Event,
-        _poll_opts: polling::PollMode,
+        poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.conin.register(poll, with_key(interest, PTY_WRITE_TOKEN));
-        self.conout.register(poll, with_key(interest, PTY_READ_TOKEN));
+        self.conin.register(poll, with_key(interest, PTY_WRITE_TOKEN), poll_opts);
+        self.conout.register(poll, with_key(interest, PTY_READ_TOKEN), poll_opts);
         self.child_watcher.register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())

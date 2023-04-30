@@ -20,7 +20,7 @@ use crate::tty::windows::child::ChildExitWatcher;
 use crate::tty::windows::{cmdline, win32_string, Pty};
 
 // Adjust to taste. Too high means higher memory consumption, too low means over-synchronization.
-const PIPE_CAPACITY: usize = 4 * 1024 * 1024;
+const PIPE_CAPACITY: usize = crate::event_loop::READ_BUFFER_SIZE;
 
 /// RAII Pseudoconsole.
 pub struct Conpty {

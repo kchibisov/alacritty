@@ -18,7 +18,7 @@ use crate::term::Term;
 use crate::{ansi, thread, tty};
 
 /// Max bytes to read from the PTY before forced terminal synchronization.
-const READ_BUFFER_SIZE: usize = 0x10_0000;
+pub(crate) const READ_BUFFER_SIZE: usize = 0x10_0000;
 
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
@@ -63,7 +63,7 @@ impl<T> PeekableReceiver<T> {
     }
 }
 
-/// The main event!.. loop.
+/// The main event loop.
 ///
 /// Handles all the PTY I/O and runs the PTY parser which updates terminal
 /// state.
@@ -335,7 +335,7 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-            let poll_opts = polling::PollMode::EdgeOneshot;
+            let poll_opts = polling::PollMode::Oneshot;
 
             // Register TTY through EventedRW interface.
             self.pty.register(&self.poll, polling::Event::readable(0), poll_opts).unwrap();

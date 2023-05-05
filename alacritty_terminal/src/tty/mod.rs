@@ -16,6 +16,8 @@ pub mod windows;
 #[cfg(windows)]
 pub use self::windows::*;
 
+use polling::{Event, PollMode, Poller};
+
 /// This trait defines the behaviour needed to read and/or write to a stream.
 /// It defines an abstraction over mio's interface in order to allow either one
 /// read/write object or a separate read and write object.
@@ -23,19 +25,9 @@ pub trait EventedReadWrite {
     type Reader: io::Read;
     type Writer: io::Write;
 
-    fn register(
-        &mut self,
-        _: &Arc<polling::Poller>,
-        _: polling::Event,
-        _: polling::PollMode,
-    ) -> io::Result<()>;
-    fn reregister(
-        &mut self,
-        _: &Arc<polling::Poller>,
-        _: polling::Event,
-        _: polling::PollMode,
-    ) -> io::Result<()>;
-    fn deregister(&mut self, _: &Arc<polling::Poller>) -> io::Result<()>;
+    fn register(&mut self, _: &Arc<Poller>, _: Event, _: PollMode) -> io::Result<()>;
+    fn reregister(&mut self, _: &Arc<Poller>, _: Event, _: PollMode) -> io::Result<()>;
+    fn deregister(&mut self, _: &Arc<Poller>) -> io::Result<()>;
 
     fn reader(&mut self) -> &mut Self::Reader;
     fn writer(&mut self) -> &mut Self::Writer;

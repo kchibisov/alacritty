@@ -2,7 +2,7 @@
 
 use std::ffi::CStr;
 use std::fs::File;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind, Read, Result};
 use std::mem::MaybeUninit;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
@@ -17,6 +17,7 @@ use nix::pty::openpty;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use nix::sys::termios::{self, InputFlags, SetArg};
 use signal_hook::consts as sigconsts;
+use signal_hook::low_level::pipe as signal_pipe;
 
 use crate::config::PtyConfig;
 use crate::event::{OnResize, WindowSize};
@@ -265,7 +266,7 @@ pub fn new(config: &PtyConfig, window_size: WindowSize, window_id: u64) -> Resul
         let (sender, recv) = UnixStream::pair()?;
 
         // Register the recv end of the pipe for SIGCHLD.
-        signal_hook::low_level::pipe::register(sigconsts::SIGCHLD, sender)?;
+        signal_pipe::register(sigconsts::SIGCHLD, sender)?;
         recv.set_nonblocking(true)?;
         recv
     };
@@ -369,8 +370,6 @@ impl EventedReadWrite for Pty {
 impl EventedPty for Pty {
     #[inline]
     fn next_child_event(&mut self) -> Option<ChildEvent> {
-        use std::io::Read;
-
         // See if there has been a SIGCHLD.
         let mut buf = [0u8; 1];
         match self.signals.read(&mut buf) {
@@ -381,7 +380,7 @@ impl EventedPty for Pty {
             Err(e) => {
                 // We didn't receive the signal.
                 // Either an error occurred or we got EAGAIN. We don't really care which one.
-                if e.kind() != std::io::ErrorKind::WouldBlock {
+                if e.kind() != ErrorKind::WouldBlock {
                     error!("Error reading from signal pipe: {}", e);
                 }
                 return None;

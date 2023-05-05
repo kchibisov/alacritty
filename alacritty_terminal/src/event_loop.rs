@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
 use std::marker::Send;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -58,7 +58,10 @@ impl<T> PeekableReceiver<T> {
         if self.peeked.is_some() {
             self.peeked.take()
         } else {
-            self.rx.try_recv().ok()
+            match self.rx.try_recv() {
+                Err(TryRecvError::Disconnected) => panic!("event loop channel closed"),
+                res => res.ok(),
+            }
         }
     }
 }
@@ -335,7 +338,7 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-            let poll_opts = polling::PollMode::Oneshot;
+            let poll_opts = polling::PollMode::Edge;
 
             // Register TTY through EventedRW interface.
             self.pty.register(&self.poll, polling::Event::readable(0), poll_opts).unwrap();
@@ -370,7 +373,7 @@ where
 
                 // Handle channel events, if there are any.
                 if !self.drain_recv_channel(&mut state) {
-                    break 'event_loop;
+                    break;
                 }
 
                 for event in events.iter() {

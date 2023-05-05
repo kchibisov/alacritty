@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Code for running a reader/writer on another thread while driving it through `polling`.
 
 use piper::{pipe, Reader, Writer};
@@ -11,13 +10,15 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 use std::{io, thread};
 
+use crate::thread::spawn_named;
+
 struct Registration {
     interest: Mutex<Option<Interest>>,
-    end: End,
+    end: PipeEnd,
 }
 
 #[derive(Copy, Clone)]
-enum End {
+enum PipeEnd {
     Reader,
     Writer,
 }
@@ -55,51 +56,46 @@ impl<R: Read + Send + 'static> UnblockedReader<R> {
         let (reader, mut writer) = pipe(pipe_capacity);
         let interest = Arc::new(Registration {
             interest: Mutex::<Option<Interest>>::new(None),
-            end: End::Reader,
+            end: PipeEnd::Reader,
         });
 
         // Spawn the reader thread.
-        thread::Builder::new()
-            .name("alacritty-tty-reader-thread".into())
-            .spawn({
-                move || {
-                    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
-                    let mut context = Context::from_waker(&waker);
+        spawn_named("alacritty-tty-reader-thread", move || {
+            let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+            let mut context = Context::from_waker(&waker);
 
-                    loop {
-                        // Read from the reader into the pipe.
-                        match writer.poll_fill(&mut context, &mut source) {
-                            Poll::Ready(Ok(0)) => {
-                                // Either the pipe is closed or the reader is at its EOF.
-                                // In any case, we are done.
-                                return;
-                            },
+            loop {
+                // Read from the reader into the pipe.
+                match writer.poll_fill(&mut context, &mut source) {
+                    Poll::Ready(Ok(0)) => {
+                        // Either the pipe is closed or the reader is at its EOF.
+                        // In any case, we are done.
+                        return;
+                    },
 
-                            Poll::Ready(Ok(_)) => {
-                                // Keep reading.
-                                continue;
-                            },
+                    Poll::Ready(Ok(_)) => {
+                        // Keep reading.
+                        continue;
+                    },
 
-                            Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
-                                // We were interrupted; continue.
-                                continue;
-                            },
+                    Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
+                        // We were interrupted; continue.
+                        continue;
+                    },
 
-                            Poll::Ready(Err(e)) => {
-                                log::error!("error writing to pipe: {}", e);
-                                return;
-                            },
+                    Poll::Ready(Err(e)) => {
+                        log::error!("error writing to pipe: {}", e);
+                        return;
+                    },
 
-                            Poll::Pending => {
-                                // We are now waiting on the other end to advance. Park the
-                                // thread until they do.
-                                thread::park();
-                            },
-                        }
-                    }
+                    Poll::Pending => {
+                        // We are now waiting on the other end to advance. Park the
+                        // thread until they do.
+                        thread::park();
+                    },
                 }
-            })
-            .expect("failed to spawn reader thread");
+            }
+        });
 
         Self { interest, pipe: reader, first_register: true, _reader: PhantomData }
     }
@@ -158,51 +154,46 @@ impl<W: Write + Send + 'static> UnblockedWriter<W> {
         let (mut reader, writer) = pipe(pipe_capacity);
         let interest = Arc::new(Registration {
             interest: Mutex::<Option<Interest>>::new(None),
-            end: End::Writer,
+            end: PipeEnd::Writer,
         });
 
         // Spawn the writer thread.
-        thread::Builder::new()
-            .name("alacritty-tty-writer-thread".into())
-            .spawn({
-                move || {
-                    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
-                    let mut context = Context::from_waker(&waker);
+        spawn_named("alacritty-tty-writer-thread", move || {
+            let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+            let mut context = Context::from_waker(&waker);
 
-                    loop {
-                        // Write from the pipe into the writer.
-                        match reader.poll_drain(&mut context, &mut sink) {
-                            Poll::Ready(Ok(0)) => {
-                                // Either the pipe is closed or the writer is full.
-                                // In any case, we are done.
-                                return;
-                            },
+            loop {
+                // Write from the pipe into the writer.
+                match reader.poll_drain(&mut context, &mut sink) {
+                    Poll::Ready(Ok(0)) => {
+                        // Either the pipe is closed or the writer is full.
+                        // In any case, we are done.
+                        return;
+                    },
 
-                            Poll::Ready(Ok(_)) => {
-                                // Keep writing.
-                                continue;
-                            },
+                    Poll::Ready(Ok(_)) => {
+                        // Keep writing.
+                        continue;
+                    },
 
-                            Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
-                                // We were interrupted; continue.
-                                continue;
-                            },
+                    Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
+                        // We were interrupted; continue.
+                        continue;
+                    },
 
-                            Poll::Ready(Err(e)) => {
-                                log::error!("error writing to pipe: {}", e);
-                                return;
-                            },
+                    Poll::Ready(Err(e)) => {
+                        log::error!("error writing to pipe: {}", e);
+                        return;
+                    },
 
-                            Poll::Pending => {
-                                // We are now waiting on the other end to advance. Park the
-                                // thread until they do.
-                                thread::park();
-                            },
-                        }
-                    }
+                    Poll::Pending => {
+                        // We are now waiting on the other end to advance. Park the
+                        // thread until they do.
+                        thread::park();
+                    },
                 }
-            })
-            .expect("failed to spawn writer thread");
+            }
+        });
 
         Self { interest, pipe: writer, _reader: PhantomData }
     }
@@ -268,8 +259,8 @@ impl Wake for Registration {
         if let Some(interest) = interest_lock.as_ref() {
             // Send the event to the poller.
             let send_event = match self.end {
-                End::Reader => interest.event.readable,
-                End::Writer => interest.event.writable,
+                PipeEnd::Reader => interest.event.readable,
+                PipeEnd::Writer => interest.event.writable,
             };
 
             if send_event {

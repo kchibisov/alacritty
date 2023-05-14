@@ -36,36 +36,6 @@ pub enum Msg {
     Resize(WindowSize),
 }
 
-struct PeekableReceiver<T> {
-    rx: Receiver<T>,
-    peeked: Option<T>,
-}
-
-impl<T> PeekableReceiver<T> {
-    fn new(rx: Receiver<T>) -> Self {
-        Self { rx, peeked: None }
-    }
-
-    fn peek(&mut self) -> Option<&T> {
-        if self.peeked.is_none() {
-            self.peeked = self.rx.try_recv().ok();
-        }
-
-        self.peeked.as_ref()
-    }
-
-    fn recv(&mut self) -> Option<T> {
-        if self.peeked.is_some() {
-            self.peeked.take()
-        } else {
-            match self.rx.try_recv() {
-                Err(TryRecvError::Disconnected) => panic!("event loop channel closed"),
-                res => res.ok(),
-            }
-        }
-    }
-}
-
 /// The main event loop.
 ///
 /// Handles all the PTY I/O and runs the PTY parser which updates terminal
@@ -445,5 +415,35 @@ where
 
             (self, state)
         })
+    }
+}
+
+struct PeekableReceiver<T> {
+    rx: Receiver<T>,
+    peeked: Option<T>,
+}
+
+impl<T> PeekableReceiver<T> {
+    fn new(rx: Receiver<T>) -> Self {
+        Self { rx, peeked: None }
+    }
+
+    fn peek(&mut self) -> Option<&T> {
+        if self.peeked.is_none() {
+            self.peeked = self.rx.try_recv().ok();
+        }
+
+        self.peeked.as_ref()
+    }
+
+    fn recv(&mut self) -> Option<T> {
+        if self.peeked.is_some() {
+            self.peeked.take()
+        } else {
+            match self.rx.try_recv() {
+                Err(TryRecvError::Disconnected) => panic!("event loop channel closed"),
+                res => res.ok(),
+            }
+        }
     }
 }

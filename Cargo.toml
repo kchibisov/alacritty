@@ -13,4 +13,4 @@ incremental = false
 panic = "abort"
 
 [patch.crates-io]
-winit = { git = "https://github.com/rust-windowing/winit", branch = "master" }
+winit = { git = "https://github.com/rust-windowing/winit", rev = "ad52c72e41e52527fb2d9c49fd364d6c70b9c0a9" }

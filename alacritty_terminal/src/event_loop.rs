@@ -169,7 +169,7 @@ where
     ) -> EventLoop<T, U> {
         let (tx, rx) = mpsc::channel();
         EventLoop {
-            poll: polling::Poller::new().expect("create mio Poll").into(),
+            poll: polling::Poller::new().expect("create Poll").into(),
             pty,
             tx,
             rx: PeekableReceiver::new(rx),
@@ -308,10 +308,11 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-            let poll_opts = polling::PollMode::Edge;
+            let poll_opts = polling::PollMode::Level;
+            let mut interest = polling::Event::readable(0);
 
             // Register TTY through EventedRW interface.
-            self.pty.register(&self.poll, polling::Event::readable(0), poll_opts).unwrap();
+            self.pty.register(&self.poll, interest, poll_opts).unwrap();
 
             let mut events = Vec::with_capacity(1024);
 
@@ -364,8 +365,7 @@ where
                         },
 
                         token if token == tty::PTY_READ_TOKEN || token == tty::PTY_WRITE_TOKEN => {
-                            /*
-                            #[cfg(unix)]
+                            /* FIXME: once polling supports extra reported modes bring it back.
                             if UnixReady::from(event.readiness()).is_hup() {
                                 // Don't try to do I/O on a dead PTY.
                                 continue;
@@ -402,12 +402,13 @@ where
                 }
 
                 // Register write interest if necessary.
-                let mut interest = polling::Event::readable(0);
-                if state.needs_write() {
-                    interest.writable = true;
+                let needs_write = state.needs_write();
+                if needs_write != interest.writable {
+                    interest.writable = needs_write;
+
+                    // Re-register with new interest.
+                    self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
                 }
-                // Reregister with new interest.
-                self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly.

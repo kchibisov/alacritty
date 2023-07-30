@@ -47,6 +47,7 @@ const ALLOWED_TARGETS: &[&str] = &[
     "alacritty_terminal",
     "alacritty",
     "crossfont",
+    "vte",
 ];
 
 pub fn initialize(
